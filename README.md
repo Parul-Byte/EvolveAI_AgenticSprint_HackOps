@@ -1,1 +1,1 @@
-# Ev-o-l-v-eAI-_Ag-e-n-ti-c-S-p-ri-n-t-_-HackOps-
+EvolveAI_AgenticSprint_HackOps
