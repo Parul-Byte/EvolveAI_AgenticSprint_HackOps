@@ -25,9 +25,7 @@ backend/
 │       ├── classification_agent.py
 │       ├── risk_agent.py
 │       └── advisory_agent.py
-├── uploads/                 # Uploaded files (gitignored)
-├── audit_logs/              # Audit trails (gitignored)
-├── tests/                   # Unit tests
+├── uploads/                 # Uploaded files 
 └── requirements.txt         # Python dependencies
 ```
 
