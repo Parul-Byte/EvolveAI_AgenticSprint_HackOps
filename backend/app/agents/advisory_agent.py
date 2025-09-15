@@ -3,17 +3,10 @@ from ..llm_clients import call_gemini
 async def advisory_agent(state):
     """
     Advisory Agent:
-    - Uses Gemini API to generate human-readable summary
+    - Uses Gemini API to produce executive summaries and recommendations
     """
-    risks_text = "\n".join(
-        [f"{r['clause_id']} - {r['risk']} - {r['reason']}" for r in state["risks"]]
-    )
-
-    prompt = f"""Generate an executive summary of the following risks with top 3 recommendations:
-{risks_text}"""
-
-    text = await call_gemini(prompt)
-    recs = [line.strip("-* ") for line in text.splitlines() if len(line.strip()) > 10]
-
-    state["advisory"] = {"executive_summary": text, "recommendations": recs[:5]}
+    risks_text = "\n".join([f"{r['clause_id']}: {r['risk']} - {r['reason']}" for r in state["risks"]])
+    prompt = f"Generate a compliance summary with recommendations:\n{risks_text}"
+    summary = await call_gemini(prompt)
+    state["advisory"] = {"executive_summary": summary, "recommendations": summary.split("\n")}
     return state
