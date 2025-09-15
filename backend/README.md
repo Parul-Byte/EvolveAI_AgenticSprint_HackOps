@@ -62,6 +62,10 @@ backend/
    uvicorn app.main:app --reload
    ```
 
+2. **Run Streamlit frontend**:
+   ```
+   streamlit run backend/frontend/frontend.py
+   ```
 ## API Endpoints
 
 - `POST /upload`: Upload a contract document for analysis
