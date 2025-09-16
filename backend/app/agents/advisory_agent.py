@@ -1,12 +1,25 @@
 from ..llm_clients import call_gemini
+from ..workflow import ContractState, AdvisoryResult
 
-async def advisory_agent(state):
+async def advisory_agent(state: ContractState) -> ContractState:
+    risks_summary = "\n".join(
+        [f"- {r.clause_id}: {r.risk} ({r.framework}, {r.status})" for r in state.risks]
+    )
+
+    prompt = f"""
+    You are a compliance advisor. Based on the following risk assessment:
+
+    {risks_summary}
+
+    Provide:
+    1. Executive summary
+    2. Top 3 recommendations
     """
-    Advisory Agent:
-    - Uses Gemini API to produce executive summaries and recommendations
-    """
-    risks_text = "\n".join([f"{r['clause_id']}: {r['risk']} - {r['reason']}" for r in state["risks"]])
-    prompt = f"Generate a compliance summary with recommendations:\n{risks_text}"
-    summary = await call_gemini(prompt)
-    state["advisory"] = {"executive_summary": summary, "recommendations": summary.split("\n")}
+
+    response = await call_gemini(prompt)
+
+    state.advisory = AdvisoryResult(
+        executive_summary=response[:500],  # Simplified parsing
+        recommendations=response.split("\n")[:3],
+    )
     return state

@@ -16,7 +16,6 @@ class ContractState(BaseModel):
     overall_score: float = 0.0
 
 workflow = StateGraph(ContractState)
-
 workflow.add_node("ingestion_agent", ingestion_agent)
 workflow.add_node("classification_agent", classification_agent)
 workflow.add_node("risk_agent", risk_agent)

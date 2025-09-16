@@ -43,8 +43,8 @@ backend/
    ```
 
 3. **Activate the virtual environment**:
-   - Windows: `venv\Scripts\activate`
-   - macOS/Linux: `source venv/bin/activate`
+   - Windows: `.venv\Scripts\activate`
+   - macOS/Linux: `source .venv/bin/activate`
 
 4. **Install dependencies**:
    ```
@@ -59,7 +59,7 @@ backend/
 
 1. **Start the FastAPI server**:
    ```
-   uvicorn app.main:app --reload
+   uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 2. **Run Streamlit frontend**:

@@ -2,32 +2,27 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from typing import Dict, Any
-import time
+import base64
 
 # Configure page
 st.set_page_config(
-    page_title="CompliTech - Compliance Analyzer",
+    page_title="AgenticSpark - Compliance Analyzer",
     page_icon="📋",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Constants
-BACKEND_URL = "http://0.0.0.0:8000"
+BACKEND_URL = "http://localhost:8002"  # Match FastAPI backend
 
 def analyze_document(file) -> Dict[str, Any]:
     """Send document to backend for analysis"""
-    import base64
+    file_data = base64.b64encode(file.getvalue()).decode("utf-8")
 
-    # Encode file data as base64
-    file_data = base64.b64encode(file.getvalue()).decode('utf-8')
-
-    # Send as form data instead of multipart
     data = {
         "file_data": file_data,
-        "filename": file.name
+        "filename": file.name,
     }
 
     try:
@@ -49,10 +44,10 @@ def display_results(results: Dict[str, Any]):
         st.header("📊 Executive Summary")
         advisory = results["advisory"]
 
-        if "executive_summary" in advisory:
+        if advisory.get("executive_summary"):
             st.info(advisory["executive_summary"])
 
-        if "recommendations" in advisory and advisory["recommendations"]:
+        if advisory.get("recommendations"):
             st.subheader("💡 Key Recommendations")
             for i, rec in enumerate(advisory["recommendations"], 1):
                 st.write(f"{i}. {rec}")
@@ -81,14 +76,20 @@ def display_results(results: Dict[str, Any]):
                 values=risk_counts.values,
                 names=risk_counts.index,
                 title="Risk Distribution",
-                color_discrete_map={"High": "red", "Medium": "orange", "Low": "green"}
+                color_discrete_map={"High": "red", "Medium": "orange", "Low": "green"},
             )
             st.plotly_chart(fig, use_container_width=True)
 
             # Risk details table
             st.subheader("Detailed Risk Analysis")
             display_df = risks_df[["clause_id", "risk", "framework", "status", "reason"]]
-            display_df.columns = ["Clause ID", "Risk Level", "Framework", "Status", "Reason"]
+            display_df.columns = [
+                "Clause ID",
+                "Risk Level",
+                "Framework",
+                "Status",
+                "Reason",
+            ]
             st.dataframe(display_df, use_container_width=True)
 
     # Classification Results
@@ -103,15 +104,24 @@ def display_results(results: Dict[str, Any]):
                 x=type_counts.index,
                 y=type_counts.values,
                 title="Clause Types Distribution",
-                labels={"x": "Clause Type", "y": "Count"}
+                labels={"x": "Clause Type", "y": "Count"},
             )
             st.plotly_chart(fig, use_container_width=True)
 
             # Classification details
             st.subheader("Classified Clauses")
-            display_df = classified_df[["clause_id", "text", "cls_type", "confidence"]]
-            display_df.columns = ["ID", "Text", "Type", "Confidence"]
-            display_df["Confidence"] = display_df["Confidence"].round(3)
+            cols_to_show = ["clause_id", "text", "cls_type"]
+            if "confidence" in classified_df.columns:
+                classified_df["confidence"] = classified_df["confidence"].round(3)
+                cols_to_show.append("confidence")
+
+            display_df = classified_df[cols_to_show]
+            display_df.columns = [
+                "ID",
+                "Text",
+                "Type",
+                *(["Confidence"] if "confidence" in classified_df.columns else []),
+            ]
             st.dataframe(display_df, use_container_width=True)
 
     # Extracted Clauses
@@ -122,72 +132,64 @@ def display_results(results: Dict[str, Any]):
         if not clauses_df.empty:
             st.subheader(f"Total Clauses Extracted: {len(clauses_df)}")
 
-            # Show clauses in an expandable format
             for idx, clause in clauses_df.iterrows():
                 with st.expander(f"Clause {clause.get('clause_id', idx+1)}"):
                     st.write(f"**Text:** {clause.get('text', 'N/A')}")
-                    if clause.get('page'):
+                    if clause.get("page"):
                         st.write(f"**Page:** {clause['page']}")
-                    if clause.get('section'):
+                    if clause.get("section"):
                         st.write(f"**Section:** {clause['section']}")
 
 def main():
-    st.title("🤖 CompliTech - AI Compliance Analyzer")
+    st.title("🤖 AgenticSpark - AI Compliance Analyzer")
     st.markdown("---")
 
     st.sidebar.header("📋 About")
-    st.sidebar.info("""
-    **AgenticSpark** is an AI-powered compliance analysis platform that:
+    st.sidebar.info(
+        """
+        **AgenticSpark** is an AI-powered compliance analysis platform:
 
-    🔍 **Extracts** clauses from legal documents
-    🏷️ **Classifies** clauses by type and purpose
-    ⚠️ **Assesses** compliance risks
-    💡 **Provides** executive recommendations
+        🔍 Extracts clauses from legal documents  
+        🏷️ Classifies clauses by type  
+        ⚠️ Assesses compliance risks  
+        💡 Provides executive recommendations  
 
-    Upload a PDF document to get started!
-    """)
+        Upload a PDF document to get started!
+        """
+    )
 
-    # File upload section
+    # File upload
     st.header("📤 Upload Document")
     uploaded_file = st.file_uploader(
-        "Choose a PDF file",
-        type=["pdf"],
-        help="Upload a compliance document for analysis"
+        "Choose a PDF file", type=["pdf"], help="Upload a compliance document"
     )
 
     if uploaded_file is not None:
         st.success(f"📄 File uploaded: {uploaded_file.name}")
 
-        # Analysis button
         if st.button("🔍 Analyze Document", type="primary", use_container_width=True):
             with st.spinner("🤖 Analyzing document... This may take a few moments."):
-                progress_bar = st.progress(0)
-                for i in range(100):
-                    time.sleep(0.02)
-                    progress_bar.progress(i + 1)
-
+                progress_bar = st.progress(10)
                 results = analyze_document(uploaded_file)
+                progress_bar.progress(100)
 
                 if results:
                     st.success("✅ Analysis complete!")
                     display_results(results)
                 else:
-                    st.error("❌ Analysis failed. Please check the backend connection.")
+                    st.error("❌ Analysis failed. Please check the backend.")
 
-    # Instructions
     with st.expander("ℹ️ How to Use"):
-        st.markdown("""
-        1. **Upload** a PDF compliance document
-        2. **Click** "Analyze Document" to start processing
-        3. **Review** the results in organized sections:
-           - Executive summary and recommendations
-           - Risk assessment with visualizations
-           - Clause classifications
-           - Extracted clauses with details
-        4. **Export** results if needed for reporting
-
-        **Note:** Make sure the backend server is running on `http://localhost:8000`
-        """)
-
+        st.markdown(
+            """
+            1. **Upload** a PDF compliance document  
+            2. **Click** "Analyze Document"  
+            3. **Review** results:
+               - Executive summary + recommendations  
+               - Risk assessment with visuals  
+               - Clause classifications  
+               - Extracted clauses
+            """
+            )
 if __name__ == "__main__":
     main()

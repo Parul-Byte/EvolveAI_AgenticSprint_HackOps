@@ -1,63 +1,40 @@
 import re
-import spacy
-from docling.document_converter import DocumentConverter  # Updated import for correct API
+from typing import List
+from langchain_docling import DoclingLoader
+from langchain.schema import Document as LC_Document
 from sentence_transformers import SentenceTransformer, util
+import nltk
 
-# Load NLP + embeddings with fallback
-try:
-    nlp = spacy.load("en_core_web_sm")
-    print("✅ spaCy model 'en_core_web_sm' loaded successfully")
-except OSError:
-    print("⚠️  spaCy model 'en_core_web_sm' not found. Please run:")
-    print("   uv run python -m spacy download en_core_web_sm")
-    print("   Using basic sentence splitting as fallback...")
-    nlp = None
+# Ensure NLTK sentence tokenizer is available
+nltk.download("punkt", quiet=True)
 
+# Load embeddings
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# -----------------------------
-# Clause Splitting
-# -----------------------------
-def _split_regex(text: str):
-    """
-    Split text based on legal numbering patterns like:
-    1., 1.1, Section 3, Clause 7, Article IV, (a), (i)
-    """
+
+def _split_regex(text: str) -> List[str]:
+    """Split text using legal-style markers like Section, Clause, Article, etc."""
     pattern = re.compile(
         r"(?=(\d+(\.\d+)*\s|Section\s+\d+|Clause\s+\d+|Article\s+\w+|\([a-z]\)|\([ivx]+\)))",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
     return [p.strip() for p in pattern.split(text) if p and p.strip()]
 
-def _split_nlp(text: str):
-    """Fallback: sentence segmentation with spaCy"""
-    if nlp is None:
-        # Fallback to simple sentence splitting if spaCy model not available
-        import re
-        sentences = re.split(r'[.!?]+', text)
-        return [sent.strip() for sent in sentences if len(sent.strip()) > 20]
 
-    doc = nlp(text)
-    return [sent.text.strip() for sent in doc.sents if len(sent.text.strip()) > 20]
+def _split_sentences(text: str) -> List[str]:
+    """Fallback: split text into sentences using NLTK."""
+    sentences = nltk.sent_tokenize(text)
+    return [s.strip() for s in sentences if len(s.strip()) > 15]
 
-# -----------------------------
-# Semantic Merging (optimized)
-# -----------------------------
-def _merge_semantic(sentences, threshold=0.8):
-    """
-    Merge consecutive sentences if they are semantically very similar
-    to avoid splitting one clause into fragments.
-    Adaptive threshold based on sentence length.
-    """
-    if len(sentences) == 1:
+
+def _merge_semantic(sentences: List[str], threshold=0.8) -> List[str]:
+    """Merge semantically similar consecutive chunks."""
+    if len(sentences) <= 1:
         return sentences
-
     embeddings = embedder.encode(sentences, convert_to_tensor=True, batch_size=16)
     merged, buffer = [], sentences[0]
-
     for i in range(1, len(sentences)):
-        sim = util.cos_sim(embeddings[i-1], embeddings[i]).item()
-        # Adaptive threshold: stricter for short sentences
+        sim = util.cos_sim(embeddings[i - 1], embeddings[i]).item()
         adaptive_th = threshold + 0.05 if len(sentences[i]) < 50 else threshold
         if sim > adaptive_th:
             buffer += " " + sentences[i]
@@ -67,70 +44,39 @@ def _merge_semantic(sentences, threshold=0.8):
     merged.append(buffer)
     return merged
 
-# -----------------------------
-# Clause Type Heuristics
-# -----------------------------
-def _guess_clause_type(text: str) -> str:
-    """Heuristic to add hints for clause types"""
-    lowered = text.lower()
-    if "termination" in lowered:
-        return "Termination"
-    if "confidential" in lowered or "non-disclosure" in lowered:
-        return "Confidentiality"
-    if "governing law" in lowered or "jurisdiction" in lowered:
-        return "Governing Law"
-    if "indemnify" in lowered or "liability" in lowered:
-        return "Liability"
-    if "payment" in lowered or "fees" in lowered:
-        return "Payment"
-    if "privacy" in lowered or "data protection" in lowered:
-        return "Data Protection"
-    return "General"
 
-# -----------------------------
-# Extract Clauses
-# -----------------------------
 def extract_clauses(file_path: str):
     """
-    Extract structured clauses from PDF/DOCX:
-    - Handles numbered sections, bullets, tables
-    - Adds heuristic clause_type hints
+    Extract clauses from contracts using DoclingLoader with aggressive splitting.
     """
-    # Updated to use DocumentConverter (replaces old loaders)
-    converter = DocumentConverter()
-    result = converter.convert(file_path)
-    doc = result.document
+    loader = DoclingLoader(file_path=file_path, export_type="DOC_CHUNKS")
+    docs: List[LC_Document] = loader.load()
 
     clauses, cid = [], 0
-
-    for block in doc.body:  # Corrected from doc.blocks to doc.body
-        text = (block.text or "").strip()
+    for doc in docs:
+        text = (doc.page_content or "").strip()
         if not text:
             continue
 
-        # Handle tables
-        if block.type == "table":
-            table_text = " ".join([" | ".join(row) for row in block.cells])
-            text = f"[TABLE] {table_text}"
+        # Try regex → then paragraphs → then sentences
+        parts = _split_regex(text)
+        if not parts or len(parts) == 1:
+            parts = [p for p in text.split("\n\n") if p.strip()]
+        if not parts or len(parts) == 1:
+            parts = _split_sentences(text)
 
-        # Handle bullets (simple regex)
-        if re.match(r"^[-•·]\s+", text):
-            text = f"[BULLET] {text}"
-
-        # Split and merge
-        parts = _split_regex(text) or _split_nlp(text)
         parts = _merge_semantic(parts) if len(parts) > 1 else parts
 
         for chunk in parts:
             if len(chunk) < 20:
                 continue
             cid += 1
-            clauses.append({
-                "clause_id": f"C{cid}",
-                "text": chunk,
-                "page": getattr(block, "page", None),
-                "section": getattr(block, "heading", None),
-                "hint_type": _guess_clause_type(chunk),  # NEW
-            })
+            clauses.append(
+                {
+                    "clause_id": f"C{cid}",
+                    "text": chunk,
+                    "metadata": doc.metadata,  # page, section info
+                }
+            )
 
     return clauses

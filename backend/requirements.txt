@@ -9,12 +9,13 @@ sentence-transformers
 
 # LangGraph for multi-agent workflow
 langgraph
+langchain
 
 # Hugging Face API calls
 httpx
 
 # Docling for document parsing
-docling
+langchain-docling
 
 # Pydantic for state models
 pydantic
