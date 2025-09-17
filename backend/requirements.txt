@@ -1,10 +1,28 @@
+# Backend framework
 fastapi
-uvicorn[standard]
-httpx
+uvicorn
 python-multipart
-pydantic
-docling
+
+# AI / NLP
+spacy
+sentence-transformers
+
+# LangGraph for multi-agent workflow
 langgraph
-python-dotenv
-pytest
-pytest-asyncio
+langchain
+
+# Hugging Face API calls
+httpx
+
+# Docling for document parsing
+langchain-docling
+
+# Pydantic for state models
+pydantic
+
+# Google AI (Official Gemini Client)
+google-genai
+
+# Front end
+plotly
+streamlit

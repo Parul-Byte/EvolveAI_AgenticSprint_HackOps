@@ -1,48 +1,82 @@
-from docling.document_converter import DocumentConverter
 import re
+from typing import List
+from langchain_docling import DoclingLoader
+from langchain.schema import Document as LC_Document
+from sentence_transformers import SentenceTransformer, util
+import nltk
+
+# Ensure NLTK sentence tokenizer is available
+nltk.download("punkt", quiet=True)
+
+# Load embeddings
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+
+def _split_regex(text: str) -> List[str]:
+    """Split text using legal-style markers like Section, Clause, Article, etc."""
+    pattern = re.compile(
+        r"(?=(\d+(\.\d+)*\s|Section\s+\d+|Clause\s+\d+|Article\s+\w+|\([a-z]\)|\([ivx]+\)))",
+        re.IGNORECASE,
+    )
+    return [p.strip() for p in pattern.split(text) if p and p.strip()]
+
+
+def _split_sentences(text: str) -> List[str]:
+    """Fallback: split text into sentences using NLTK."""
+    sentences = nltk.sent_tokenize(text)
+    return [s.strip() for s in sentences if len(s.strip()) > 15]
+
+
+def _merge_semantic(sentences: List[str], threshold=0.8) -> List[str]:
+    """Merge semantically similar consecutive chunks."""
+    if len(sentences) <= 1:
+        return sentences
+    embeddings = embedder.encode(sentences, convert_to_tensor=True, batch_size=16)
+    merged, buffer = [], sentences[0]
+    for i in range(1, len(sentences)):
+        sim = util.cos_sim(embeddings[i - 1], embeddings[i]).item()
+        adaptive_th = threshold + 0.05 if len(sentences[i]) < 50 else threshold
+        if sim > adaptive_th:
+            buffer += " " + sentences[i]
+        else:
+            merged.append(buffer)
+            buffer = sentences[i]
+    merged.append(buffer)
+    return merged
+
 
 def extract_clauses(file_path: str):
     """
-    Extracts clauses from a PDF or DOCX file using Docling.
-    Returns a list of dicts with clause_id, text, page, section.
-    Improved: Uses capturing regex to include clause headers, groups by sections from headings,
-    and handles more clause patterns.
+    Extract clauses from contracts using DoclingLoader with aggressive splitting.
     """
-    try:
-        converter = DocumentConverter()
-        result = converter.convert(file_path)
-        doc = result.document
+    loader = DoclingLoader(file_path=file_path, export_type="DOC_CHUNKS")
+    docs: List[LC_Document] = loader.load()
 
-        clauses = []
-        cid = 0
-        current_section = None
+    clauses, cid = [], 0
+    for doc in docs:
+        text = (doc.page_content or "").strip()
+        if not text:
+            continue
 
-        for block in doc.blocks:
-            # Update section if block is a heading
-            if hasattr(block, 'item_type') and block.item_type == 'heading':
-                current_section = (block.text or "").strip()
-                continue  # Skip headings as clauses unless they contain sub-clauses
+        # Try regex → then paragraphs → then sentences
+        parts = _split_regex(text)
+        if not parts or len(parts) == 1:
+            parts = [p for p in text.split("\n\n") if p.strip()]
+        if not parts or len(parts) == 1:
+            parts = _split_sentences(text)
 
-            text = (block.text or "").strip()
-            if not text:
+        parts = _merge_semantic(parts) if len(parts) > 1 else parts
+
+        for chunk in parts:
+            if len(chunk) < 20:
                 continue
+            cid += 1
+            clauses.append(
+                {
+                    "clause_id": f"C{cid}",
+                    "text": chunk,
+                    "metadata": doc.metadata,  # page, section info
+                }
+            )
 
-            clause_pattern = r"(\d+\.\d+|\bClause\s+\d+|\bSection\s+\d+|\bArticle\s+\d+|\bSubsection\s+\d+)"
-            parts = re.split(clause_pattern, text)
-
-            for i in range(0, len(parts), 2):
-                body = parts[i].strip()
-                header = parts[i+1].strip() if i+1 < len(parts) else ""
-                if body or header:
-                    cid += 1
-                    full_text = f"{header} {body}".strip()
-                    clauses.append({
-                        "clause_id": f"C{cid}",
-                        "text": full_text,
-                        "page": getattr(block, "page_no", getattr(block, "page", None)),
-                        "section": current_section
-                    })
-
-        return clauses
-    except Exception as e:
-        raise RuntimeError(f"Error parsing document {file_path}: {str(e)}")
+    return clauses

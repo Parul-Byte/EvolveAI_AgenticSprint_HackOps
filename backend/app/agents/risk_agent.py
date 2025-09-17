@@ -1,40 +1,20 @@
-import json
-from ..llm_clients import call_hf
+from ..llm_clients import analyze_risk_t5
+from ..workflow import ContractState, RiskResult
 
-async def risk_agent(state):
-    """
-    Risk Agent:
-    - Evaluates compliance risks of classified clauses
-    """
-    out = []
-    for c in state["classified"]:
-        prompt = f"""Evaluate compliance risk of this clause against IRDAI, GDPR, HIPAA.
-                        Return JSON: {{
-                        "clause_id": "{c['clause_id']}",
-                        "risk": "Low|Medium|High",
-                        "framework": "<IRDAI|GDPR|HIPAA>",
-                        "status": "Aligned|Partial|Gap",
-                        "reason": "...",
-                        "score": 0.xx
-                        }}
-Clause: {c['text']}
-Type: {c['cls_type']}"""
-
-        text = await call_hf(prompt)
-
-        try:
-            result = json.loads(text)
-        except:
-            result = {
-                "clause_id": c["clause_id"],
-                "risk": "Medium",
-                "framework": "IRDAI",
-                "status": "Partial",
-                "reason": "Fallback parse",
-                "score": 0.5
-            }
-        out.append(result)
-
-    state["risks"] = out
-    state["overall_score"] = sum(r.get("score", 0.5) for r in out) / len(out)
+async def risk_agent(state: ContractState) -> ContractState:
+    risks = []
+    for clause in state.classified:
+        result = await analyze_risk_t5(clause.text, clause.cls_type)
+        risks.append(
+            RiskResult(
+                clause_id=clause.clause_id,
+                risk=result["risk"],
+                framework=result["framework"],
+                status=result["status"],
+                reason=result["reason"],
+                score=result.get("score", 0.5),
+            )
+        )
+    state.risks = risks
+    state.overall_score = sum(r.score for r in risks) / len(risks) if risks else 0.0
     return state
