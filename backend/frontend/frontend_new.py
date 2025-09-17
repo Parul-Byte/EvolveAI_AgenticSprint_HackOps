@@ -1,17 +1,15 @@
-import streamlit# Constants
-BACKEND_URL = "http://localhost:8000"
-
-def analyze_document(file) -> Dict[str, Any]:st
+import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Dict, Any
 import time
+import base64
 
 # Configure page
 st.set_page_config(
-    page_title="CompliTech - Compliance Analyzer",
+    page_title="AgenticSpark - Compliance Analyzer",
     page_icon="📋",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -22,8 +20,6 @@ BACKEND_URL = "http://localhost:8000"
 
 def analyze_document(file) -> Dict[str, Any]:
     """Send document to backend for analysis"""
-    import base64
-
     # Encode file data as base64
     file_data = base64.b64encode(file.getvalue()).decode('utf-8')
 
@@ -135,12 +131,12 @@ def display_results(results: Dict[str, Any]):
                         st.write(f"**Section:** {clause['section']}")
 
 def main():
-    st.title("🤖 CompliTech - AI Compliance Analyzer")
+    st.title("🤖 AgenticSpark - AI Compliance Analyzer")
     st.markdown("---")
 
     st.sidebar.header("📋 About")
     st.sidebar.info("""
-    **CompliTech** is an AI-powered compliance analysis platform that:
+    **AgenticSpark** is an AI-powered compliance analysis platform that:
 
     🔍 **Extracts** clauses from legal documents
     🏷️ **Classifies** clauses by type and purpose
@@ -189,7 +185,7 @@ def main():
            - Extracted clauses with details
         4. **Export** results if needed for reporting
 
-        **Note:** Make sure the backend server is running on `http://localhost:8501`
+        **Note:** Make sure the backend server is running on `http://localhost:8000`
         """)
 
 if __name__ == "__main__":

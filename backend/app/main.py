@@ -5,7 +5,6 @@ import base64
 import traceback
 import logging
 
-# Import your workflow + state
 from .workflow import compiled_workflow, ContractState
 
 # Set up logging
@@ -22,11 +21,10 @@ async def root():
 async def health_check():
     return {"status": "healthy", "backend": "running"}
 
-
 @app.post("/analyze")
 async def analyze(file_data: str = Form(...), filename: str = Form(...)):
     logger.info(f"Received analyze request for file: {filename}")
-
+    
     # Decode base64 file data
     try:
         file_bytes = base64.b64decode(file_data)
@@ -37,7 +35,6 @@ async def analyze(file_data: str = Form(...), filename: str = Form(...)):
 
     temp_path = f"temp_{filename}"
     try:
-        # Save the file temporarily
         with open(temp_path, "wb") as f:
             f.write(file_bytes)
         logger.info(f"File saved to: {temp_path}")
@@ -46,7 +43,6 @@ async def analyze(file_data: str = Form(...), filename: str = Form(...)):
         return JSONResponse(status_code=500, content={"error": f"Failed to save file: {str(e)}"})
 
     try:
-        # Run the actual workflow
         logger.info("Starting workflow execution...")
         state = ContractState(file_path=temp_path)
         result = await compiled_workflow.ainvoke(state)
@@ -57,7 +53,6 @@ async def analyze(file_data: str = Form(...), filename: str = Form(...)):
         logger.error(f"{error_msg}\nTraceback: {traceback.format_exc()}")
         return JSONResponse(status_code=500, content={"error": error_msg, "traceback": traceback.format_exc()})
     finally:
-        # Clean up the temporary file
         if os.path.exists(temp_path):
             os.remove(temp_path)
             logger.info(f"Cleaned up temp file: {temp_path}")
