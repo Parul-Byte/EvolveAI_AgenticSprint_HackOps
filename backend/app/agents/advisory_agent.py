@@ -1,9 +1,10 @@
 from ..llm_clients import call_gemini
-from ..workflow import ContractState, AdvisoryResult
+from ..Schema import ContractState, AdvisoryResult
 
 async def advisory_agent(state: ContractState) -> ContractState:
+    # Build human-readable risk summary
     risks_summary = "\n".join(
-        [f"- {r.clause_id}: {r.risk} ({r.framework}, {r.status})" for r in state.risks]
+        [f"- {r['clause_id']}: {r['risk']} ({r['framework']}, {r['status']})" for r in state.risks]
     )
 
     prompt = f"""
@@ -18,8 +19,13 @@ async def advisory_agent(state: ContractState) -> ContractState:
 
     response = await call_gemini(prompt)
 
+    # Parse response safely
+    lines = [line.strip() for line in response.split("\n") if line.strip()]
+    executive_summary = lines[0] if lines else "Automated compliance summary."
+    top_recommendations = lines[1:4] if len(lines) > 1 else ["Review contract clauses for compliance."]
+
     state.advisory = AdvisoryResult(
-        executive_summary=response[:500],  # Simplified parsing
-        recommendations=response.split("\n")[:3],
+        executive_summary=executive_summary[:500],  # Limit to 500 chars
+        recommendations=top_recommendations
     )
     return state

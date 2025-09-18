@@ -9,8 +9,8 @@ import base64
 
 # Configure page
 st.set_page_config(
-    page_title="AgenticSpark - Compliance Analyzer",
-    page_icon="📋",
+    page_title="LexGuard - Compliance Analyzer",
+    page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -131,12 +131,12 @@ def display_results(results: Dict[str, Any]):
                         st.write(f"**Section:** {clause['section']}")
 
 def main():
-    st.title("🤖 AgenticSpark - AI Compliance Analyzer")
+    st.title("⚖️ LexGuard - AI Compliance Analyzer")
     st.markdown("---")
 
     st.sidebar.header("📋 About")
     st.sidebar.info("""
-    **AgenticSpark** is an AI-powered compliance analysis platform that:
+    **LexGuard** is an AI-powered compliance analysis platform that:
 
     🔍 **Extracts** clauses from legal documents
     🏷️ **Classifies** clauses by type and purpose

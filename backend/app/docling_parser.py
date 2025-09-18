@@ -2,14 +2,21 @@ import re
 from typing import List
 from langchain_docling import DoclingLoader
 from langchain.schema import Document as LC_Document
-from sentence_transformers import SentenceTransformer, util
 import nltk
 
 # Ensure NLTK sentence tokenizer is available
 nltk.download("punkt", quiet=True)
 
-# Load embeddings
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+# Lazy load embeddings model
+embedder = None
+
+def _get_embedder():
+    """Lazy load the sentence transformer model"""
+    global embedder
+    if embedder is None:
+        from sentence_transformers import SentenceTransformer
+        embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    return embedder
 
 
 def _split_regex(text: str) -> List[str]:
@@ -27,10 +34,21 @@ def _split_sentences(text: str) -> List[str]:
     return [s.strip() for s in sentences if len(s.strip()) > 15]
 
 
+def _split_markdown_sections(text: str) -> List[str]:
+    """Split markdown text by headers and sections."""
+    import re
+    # Split by markdown headers (# ## ###) and other section markers
+    sections = re.split(r'(?=^#{1,6}\s|\n#{1,6}\s|\n\n[A-Z][^.!?]*:)', text, flags=re.MULTILINE)
+    return [s.strip() for s in sections if s.strip() and len(s.strip()) > 20]
+
+
 def _merge_semantic(sentences: List[str], threshold=0.8) -> List[str]:
     """Merge semantically similar consecutive chunks."""
     if len(sentences) <= 1:
         return sentences
+
+    from sentence_transformers import util
+    embedder = _get_embedder()
     embeddings = embedder.encode(sentences, convert_to_tensor=True, batch_size=16)
     merged, buffer = [], sentences[0]
     for i in range(1, len(sentences)):
@@ -45,11 +63,15 @@ def _merge_semantic(sentences: List[str], threshold=0.8) -> List[str]:
     return merged
 
 
-def extract_clauses(file_path: str):
+def extract_clauses(file_path: str, use_semantic_merge: bool = False):
     """
     Extract clauses from contracts using DoclingLoader with aggressive splitting.
+
+    Args:
+        file_path: Path to the PDF file
+        use_semantic_merge: Whether to use semantic merging (slower but more accurate)
     """
-    loader = DoclingLoader(file_path=file_path, export_type="DOC_CHUNKS")
+    loader = DoclingLoader(file_path=file_path, export_type="markdown")
     docs: List[LC_Document] = loader.load()
 
     clauses, cid = [], 0
@@ -58,14 +80,18 @@ def extract_clauses(file_path: str):
         if not text:
             continue
 
-        # Try regex → then paragraphs → then sentences
-        parts = _split_regex(text)
+        # For markdown export, split by headers and sections
+        parts = _split_markdown_sections(text)
+        if not parts or len(parts) == 1:
+            parts = _split_regex(text)
         if not parts or len(parts) == 1:
             parts = [p for p in text.split("\n\n") if p.strip()]
         if not parts or len(parts) == 1:
             parts = _split_sentences(text)
 
-        parts = _merge_semantic(parts) if len(parts) > 1 else parts
+        # Only use semantic merging if explicitly requested (it's slow)
+        if use_semantic_merge and len(parts) > 1:
+            parts = _merge_semantic(parts)
 
         for chunk in parts:
             if len(chunk) < 20:
@@ -75,7 +101,8 @@ def extract_clauses(file_path: str):
                 {
                     "clause_id": f"C{cid}",
                     "text": chunk,
-                    "metadata": doc.metadata,  # page, section info
+                    "page": doc.metadata.get("page", None),
+                    "section": doc.metadata.get("section", None),
                 }
             )
 

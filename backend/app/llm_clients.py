@@ -13,7 +13,8 @@ if not HF_API_KEY:
 if not GEMINI_API_KEY:
     print("⚠️ Warning: GEMINI_API_KEY not found, Gemini will fallback")
 
-LEGAL_BERT_URL = "https://api-inference.huggingface.co/models/nlpaueb/legal-bert-base-uncased"
+# Hugging Face endpoints
+LEGAL_BERT_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
 FLAN_T5_URL = "https://api-inference.huggingface.co/models/google/flan-t5-large"
 
 # Gemini client
@@ -24,6 +25,7 @@ try:
 except ImportError:
     GEMINI_CLIENT = None
     GEMINI_AVAILABLE = False
+
 
 async def call_hf(model_url: str, payload: dict) -> dict:
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
@@ -37,13 +39,23 @@ async def call_hf(model_url: str, payload: dict) -> dict:
             print(f"HuggingFace API error: {data['error']}")
         return data
 
-async def classify_clause_bert(text: str) -> dict:
-    data = await call_hf(LEGAL_BERT_URL, {"inputs": text})
-    if isinstance(data, list) and data and isinstance(data[0], list):
-        best = max(data[0], key=lambda x: x["score"])
-        return {"type": best["label"], "confidence": best["score"]}
-    if isinstance(data, dict) and "labels" in data:
+
+# async def classify_clause_bert(text: str, candidate_labels=None) -> dict:
+    if candidate_labels is None:
+        candidate_labels = ["Confidentiality", "Liability", "Termination", "Other"]
+
+    payload = {
+        "inputs": text,
+        "parameters": {"candidate_labels": candidate_labels}
+    }
+
+    data = await call_hf(LEGAL_BERT_URL, payload)
+
+    # Hugging Face returns 'labels' and 'scores'
+    if isinstance(data, dict) and "labels" in data and "scores" in data:
         return {"type": data["labels"][0], "confidence": data["scores"][0]}
+
+    # fallback
     return {"type": "Other", "confidence": 0.5}
 
 async def analyze_risk_t5(text: str, cls_type: str) -> dict:
@@ -67,6 +79,7 @@ Return JSON:
             print(f"Risk parsing error: {e}")
     return {"risk": "Medium", "framework": "IRDAI", "status": "Partial", "reason": "Fallback", "score": 0.5}
 
+
 async def call_gemini(prompt: str, max_tokens: int = 512) -> str:
     if not GEMINI_AVAILABLE or GEMINI_CLIENT is None:
         return _get_fallback_response(prompt)
@@ -87,6 +100,7 @@ async def call_gemini(prompt: str, max_tokens: int = 512) -> str:
     except Exception as e:
         print(f"Gemini API error: {e}")
         return _get_fallback_response(prompt)
+
 
 def _get_fallback_response(prompt: str) -> str:
     return """# Compliance Advisory Report
