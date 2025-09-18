@@ -12,10 +12,10 @@ class ContractState(BaseModel):
 class ClassifiedClause(BaseModel):
     clause_id: str
     text: str
-    page: int = None
-    section: str = None
+    page: int = Field(default=1)
+    section: str = Field(default="Unknown")
     cls_type: str
-    confidence: float
+    confidence: float = 0.0
 
 class RiskResult(BaseModel):
     clause_id: str

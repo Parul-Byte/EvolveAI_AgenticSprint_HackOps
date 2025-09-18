@@ -6,15 +6,29 @@ import traceback
 import logging
 import aiofiles
 import tempfile
+import json
 
 from .workflow import compiled_workflow
-from .Schema import ContractState, ClassifiedClause, RiskResult, AdvisoryResult
+from .Schema import ContractState
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Compliance Review Backend")
+def convert_to_serializable(obj):
+    """Recursively convert Pydantic models to dicts"""
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    elif hasattr(obj, 'dict'):
+        return obj.dict()
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    else:
+        return obj
+
+app = FastAPI(title="Compliance Review Backend", debug=True)
 
 @app.get("/")
 async def root():
@@ -36,6 +50,8 @@ async def analyze(file_data: str = Form(...), filename: str = Form(...)):
         logger.error(f"Failed to decode file data: {str(e)}")
         return JSONResponse(status_code=400, content={"error": f"Invalid file data: {str(e)}"})
 
+    temp_path = None
+
     # Save to a temporary file asynchronously
     try:
         with tempfile.NamedTemporaryFile(delete=False, prefix="tmp_", suffix=f"_{filename}") as tmp_file:
@@ -55,12 +71,20 @@ async def analyze(file_data: str = Form(...), filename: str = Form(...)):
         state = ContractState(file_path=temp_path)
         result = await compiled_workflow.ainvoke(state)
         logger.info("Workflow completed successfully")
-        return JSONResponse(content=result.dict())
+
+        # Convert nested Pydantic models recursively
+        payload = convert_to_serializable(result)
+        logger.info(f"Final payload type after conversion: {type(payload)}")
+        logger.info("Payload conversion successful")
+        
+        return JSONResponse(content=payload)
+        
     except Exception as e:
         error_msg = f"Workflow error: {str(e)}"
-        logger.error(f"{error_msg}\nTraceback: {traceback.format_exc()}")
-        return JSONResponse(status_code=500, content={"error": error_msg, "traceback": traceback.format_exc()})
+        full_traceback = traceback.format_exc()
+        logger.error(f"{error_msg}\nFull traceback:\n{full_traceback}")
+        return JSONResponse(status_code=500, content={"error": error_msg, "traceback": full_traceback})
     finally:
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
             logger.info(f"Cleaned up temp file: {temp_path}")
